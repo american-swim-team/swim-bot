@@ -1,0 +1,19 @@
+[tool.poetry]
+name = "swim-discord-bot"
+version = "0.0.1"
+description = "swim> discord bot"
+authors = ["Rom3dius <rom3dius@yahoo.com>"]
+license = "CDDL"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+"discord.py" = "^2.2.2"
+aiohttp = "^3.8.4"
+pyyaml = "^6.0"
+loguru = "^0.7.0"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
