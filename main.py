@@ -53,6 +53,7 @@ async def start_client():
     while True:
         if os.getenv('DEBUG_SWIM_BOT') != 'true':   
             try:
+                logger.remove()
                 logger.add(sys.stdout, level="DEBUG", enqueue=True)
                 logger.info("Starting client...")
                 await bot.start(cfg['bot_token'])
@@ -64,6 +65,7 @@ async def start_client():
                 logger.error(f"Caught an exception: {type(e).__name__} - {e}")
                 await asyncio.sleep(5)
         else:
+            logger.remove()
             logger.add(sys.stdout, level="DEBUG", enqueue=True)
             logger.info("Starting client in debug mode...")
             await bot.start(cfg['bot_token'])

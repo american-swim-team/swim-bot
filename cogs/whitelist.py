@@ -1,10 +1,11 @@
 import shelve
 import asyncio
 import discord
+import traceback
 from loguru import logger
 from discord import app_commands as c
 from discord import ui, Embed
-from discord.ext import commands
+from discord.ext import commands, tasks
 
 def check_steam_id(steam_id):
     if len(steam_id) != 17:
@@ -46,6 +47,12 @@ class Whitelist(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.db = shelve.open("whitelist", writeback=True)
+        try:
+            self.db["perma_whitelist"]
+            self.db["whitelist"]
+        except KeyError:
+            self.db["perma_whitelist"] = {}
+            self.db["whitelist"] = {}
 
     async def setup(self):
         self.guild = self.bot.cfg["guild"]
@@ -54,16 +61,20 @@ class Whitelist(commands.Cog):
         logger.info("Whitelist cog loaded")
 
     async def update_whitelist(self):
-        guild = self.bot.get_guild(self.guild)
-        with open("whitelist.txt", "w") as f:
-            for x in self.db['perma_whitelist']:
-                for steam_id in self.db['perma_whitelist'][x]:
-                    f.write(f"{steam_id}\n")
-            for role in self.whitelist_roles:
-                role = guild.get_role(role)
-                for member in role.members:
-                    if member.id in self.db['whitelist']:
-                        f.write(f"{self.db['whitelist'][member.id]}\n")
+        try:
+            guild = self.bot.get_guild(self.guild)
+            with open("whitelist.txt", "w") as f:
+                for x in self.db['perma_whitelist']:
+                    for steam_id in self.db['perma_whitelist'][x]:
+                        f.write(f"{steam_id}\n")
+                for role in self.whitelist_roles:
+                    role = guild.get_role(role)
+                    for member in role.members:
+                        if member.id in self.db['whitelist']:
+                            f.write(f"{self.db['whitelist'][member.id]}\n")
+            logger.debug("Updated whitelist")
+        except Exception as e:
+            logger.error(traceback.format_exc()) 
 
     async def load_whitelist(self):
         logger.debug("Loading whitelist")
@@ -74,75 +85,86 @@ class Whitelist(commands.Cog):
 
     @c.command()
     async def add_steamid(self, interaction: discord.Interaction, steam_id: str):
-        logger.debug(f"Adding steam id {steam_id}")
-        guild = self.bot.get_guild(self.guild)
-        user_id = interaction.user.id
-        member = await guild.fetch_member(user_id)
-        if check_steam_id(steam_id):
-            await interaction.response.send_message("Invalid Steam 64 ID!", ephemeral=True)
-            return
-        # If user can manipulate perma whitelist
-        if any([role.id in self.whitelist_roles for role in member.roles]) or interaction.permissions.administrator:
-            logger.debug(f"User {user_id} can manipulate perma-whitelist")
-            # this looks like bad coding but its because of shelves writeback
-            if int(steam_id) not in self.db["perma_whitelist"][user_id]:
-                self.db["perma_whitelist"][user_id].append(int(steam_id))
-                self.db.sync()
-            else:
-                await interaction.response.send_message("Steam ID already in whitelist.", ephemeral=True)
+        try:
+            logger.debug(f"Adding steam id {steam_id}")
+            guild = self.bot.get_guild(self.guild)
+            user_id = interaction.user.id
+            member = await guild.fetch_member(user_id)
+            if check_steam_id(steam_id):
+                await interaction.response.send_message("Invalid Steam 64 ID!", ephemeral=True)
                 return
-            await self.update_whitelist()
-            await self.load_whitelist()
-        # If user is an olympian
-        elif [role.id for role in member.roles] in self.whitelist_roles:
-            logger.debug(f"User {user_id} is an olympian")
-            self.db["whitelist"][user_id] = int(steam_id)
-            await self.update_whitelist()
-            await self.load_whitelist()
-        else:
-            await interaction.response.send_message("You don't have permission to add a steam id.", ephemeral=True)
-            return
-        await interaction.response.send_message(f"Added {steam_id} to the whitelist!", ephemeral=True)
+            # If user can manipulate perma whitelist
+            if any([role.id in self.whitelist_roles for role in member.roles]) or interaction.permissions.administrator:
+                logger.debug(f"User {user_id} can manipulate perma-whitelist")
+                # this looks like bad coding but its because of shelves writeback
+                if int(user_id) not in self.db["perma_whitelist"]:
+                    self.db["perma_whitelist"][user_id] = [int(steam_id)]
+                    self.db.sync()
+                elif int(steam_id) not in self.db["perma_whitelist"][user_id]:
+                    self.db["perma_whitelist"][user_id].append(int(steam_id))
+                    self.db.sync()
+                else:
+                    await interaction.response.send_message("Steam ID already in whitelist.", ephemeral=True)
+                    return
+                await self.update_whitelist()
+                await self.load_whitelist()
+            # If user is an olympian
+            elif [role.id for role in member.roles] in self.whitelist_roles:
+                logger.debug(f"User {user_id} is an olympian")
+                self.db["whitelist"][user_id] = int(steam_id)
+                await self.update_whitelist()
+                await self.load_whitelist()
+            else:
+                await interaction.response.send_message("You don't have permission to add a steam id.", ephemeral=True)
+                return
+            await interaction.response.send_message(f"Added {steam_id} to the whitelist!", ephemeral=True)
+        except Exception as e:
+            logger.error(traceback.format_exc())
+            await interaction.response.send_message("Something went wrong! Notify an admin and we'll check the logs!", ephemeral=True)
 
     @c.command()
     async def remove_steamid(self, interaction: discord.Interaction, steam_id: str):
-        logger.debug(f"Removing steam id {steam_id}")
-        guild = self.bot.get_guild(self.guild)
-        user_id = interaction.user.id
-        member = await guild.fetch_member(user_id)
-        if check_steam_id(steam_id):
-            await interaction.response.send_message("Invalid Steam 64 ID!", ephemeral=True)
-            return
-        # If user can manipulate perma whitelist
-        if any([role.id in self.whitelist_roles for role in member.roles]) or interaction.permissions.administrator:
-            logger.debug(f"User {user_id} can manipulate perma-whitelist")
-            try:
-                if int(steam_id) in self.db["perma_whitelist"][user_id]:
-                    self.db["perma_whitelist"][user_id].remove(int(steam_id))
-                    self.db.sync()
-                else:
+        try:
+            logger.debug(f"Removing steam id {steam_id}")
+            guild = self.bot.get_guild(self.guild)
+            user_id = interaction.user.id
+            member = await guild.fetch_member(user_id)
+            if check_steam_id(steam_id):
+                await interaction.response.send_message("Invalid Steam 64 ID!", ephemeral=True)
+                return
+            # If user can manipulate perma whitelist
+            if any([role.id in self.whitelist_roles for role in member.roles]) or interaction.permissions.administrator:
+                logger.debug(f"User {user_id} can manipulate perma-whitelist")
+                try:
+                    if int(steam_id) in self.db["perma_whitelist"][user_id]:
+                        self.db["perma_whitelist"][user_id].remove(int(steam_id))
+                        self.db.sync()
+                    else:
+                        await interaction.response.send_message("Steam ID not in whitelist.", ephemeral=True)
+                        return
+                except KeyError:
                     await interaction.response.send_message("Steam ID not in whitelist.", ephemeral=True)
                     return
-            except KeyError:
-                await interaction.response.send_message("Steam ID not in whitelist.", ephemeral=True)
+                await self.update_whitelist()
+                await self.load_whitelist()
+            # If user is an olympian
+            elif [role.id for role in member.roles] in self.whitelist_roles:
+                logger.debug(f"User {user_id} is an olympian")
+                try:
+                    del self.db["whitelist"][user_id]
+                    self.db.sync()
+                except KeyError:
+                    await interaction.response.send_message("Steam ID not in whitelist.", ephemeral=True)
+                    return
+                await self.update_whitelist()
+                await self.load_whitelist()
+            else:
+                await interaction.response.send_message("You don't have permission to remove a steam id.", ephemeral=True)
                 return
-            await self.update_whitelist()
-            await self.load_whitelist()
-        # If user is an olympian
-        elif [role.id for role in member.roles] in self.whitelist_roles:
-            logger.debug(f"User {user_id} is an olympian")
-            try:
-                del self.db["whitelist"][user_id]
-                self.db.sync()
-            except KeyError:
-                await interaction.response.send_message("Steam ID not in whitelist.", ephemeral=True)
-                return
-            await self.update_whitelist()
-            await self.load_whitelist()
-        else:
-            await interaction.response.send_message("You don't have permission to remove a steam id.", ephemeral=True)
-            return
-        await interaction.response.send_message(f"Removed {steam_id} from the whitelist!", ephemeral=True)
+            await interaction.response.send_message(f"Removed {steam_id} from the whitelist!", ephemeral=True)
+        except Exception as e:
+            logger.error(traceback.format_exc())
+            await interaction.response.send_message("Something went wrong! Notify an admin and we'll check the logs!", ephemeral=True)
 
     @c.command()
     @c.checks.has_permissions(administrator=True)
@@ -154,35 +176,46 @@ class Whitelist(commands.Cog):
         # Send the message and add the button
             message = await interaction.response.send_message('', embed=msg, view=view)
         except Exception as e:
-            print(e)
+            logger.error(traceback.format_exc())
+            await interaction.response.send_message("Something went wrong! Notify an admin and we'll check the logs!", ephemeral=True)
 
     @c.command()
     async def list_whitelist(self, interaction: discord.Interaction, discord_user: discord.User):
         logger.debug(f"User {interaction.user.id} requested whitelist for {discord_user.id}")
-        if any([role.id in self.whitelist_roles for role in interaction.user.roles]) or interaction.permissions.administrator: 
-            if discord_user.id in self.db['perma_whitelist']:
-                await interaction.response.send_message(f"Perma Whitelist: {self.db['perma_whitelist'][discord_user.id]}", ephemeral=True)
-                return
-            elif discord_user.id in self.db['whitelist']:
-                await interaction.response.send_message(f"Whitelist: {self.db['whitelist'][discord_user.id]}", ephemeral=True)
-                return
+        try:
+            if any([role.id in self.whitelist_roles for role in interaction.user.roles]) or interaction.permissions.administrator: 
+                if discord_user.id in self.db['perma_whitelist']:
+                    await interaction.response.send_message(f"Perma Whitelist: {self.db['perma_whitelist'][discord_user.id]}", ephemeral=True)
+                    return
+                elif discord_user.id in self.db['whitelist']:
+                    await interaction.response.send_message(f"Whitelist: {self.db['whitelist'][discord_user.id]}", ephemeral=True)
+                    return
+                else:
+                    await interaction.response.send_message("User not in whitelist.", ephemeral=True)
+                    return
             else:
-                await interaction.response.send_message("User not in whitelist.", ephemeral=True)
+                await interaction.response.send_message("You don't have permission to view the whitelist.", ephemeral=True)
                 return
-        else:
-            await interaction.response.send_message("You don't have permission to view the whitelist.", ephemeral=True)
-            return
+        except Exception as e:
+            logger.error(traceback.format_exc())
+            await interaction.response.send_message("Something went wrong! Notify an admin and we'll check the logs!", ephemeral=True)
 
     @c.command()
     @c.checks.has_permissions(administrator=True)
     async def refresh_whitelist(self, interaction: discord.Interaction):
-        logger.debug("Refreshing whitelist...")
+        logger.debug("Updating whitelist...")
         await self.update_whitelist()
         await self.load_whitelist()
         await interaction.response.send_message("Whitelist refreshed.", ephemeral=True)
 
+    @tasks.loop(minutes=5)
+    async def update_whitelist_task(self):
+        logger.debug("Updating whitelist...")
+        await self.update_whitelist()
+        await self.load_whitelist()
+
 async def setup(bot):
-    global whitelist
     whitelist = Whitelist(bot)
-    await bot.add_cog(whitelist)
     await whitelist.setup()
+    await bot.add_cog(whitelist)
+    whitelist.update_whitelist_task.start()

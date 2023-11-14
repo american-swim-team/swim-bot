@@ -6,8 +6,6 @@ from loguru import logger
 from discord.ext import commands, tasks
 from discord import app_commands as c
 
-serverstatus = None
-
 class ServerData(TypedDict):
     cars: List[str]
     clients: int
@@ -72,28 +70,41 @@ class ServerStatus(commands.Cog):
     @c.command()
     @c.checks.has_permissions(administrator=True)
     async def create_status_message(self, interaction: discord.Interaction):
-        logger.debug("Creating status message...")
-        self.client.storage["status_message_channel"] = interaction.channel.id
-        status = await self.server_status()
-        embed = discord.Embed(title="Server Status", description="Status of all servers", color=0x00ff00)
-        for s in status:
-            embed.add_field(name=s["name"], value=f"**Track:** {s['track']}\n**Session:** {s['session']}\n**Time left:** {s['timeleft']}\n**Cars:** {s['clients']}/{s['maxclients']}", inline=False, url=f" https://acstuff.ru/s/q:race/online/join?ip={s['ip']}&httpPort={s['cport']}")
-        message = await interaction.response.send_message(embed=embed)
-        self.client.storage["status_message"] = message.id
+        logger.debug(f"Creating status message for {interaction.channel.id}")
+        try:
+            self.client.storage["status_message_channel"] = interaction.channel.id
+            status = await self.server_status()
+            embed = discord.Embed(title="Server Status", description="Status of all servers", color=0x00ff00)
+            for s in status:
+                join_url = f"https://acstuff.ru/s/q:race/online/join?ip={s['ip']}&httpPort={s['cport']}"
+                embed.add_field(name=s["name"], value=f"**Track:** {s['track']}\n**Session:** {s['session']}\n**Time left:** {s['timeleft']}\n**Cars:** {s['clients']}/{s['maxclients']}\n[Join Server]({join_url})", inline=False)
+            await interaction.response.send_message(embed=embed)
+            message = await interaction.original_response()
+            self.client.storage["status_message"] = message.id
+        except Exception as e:
+            logger.error(f"Error in create_status_message: \n{e}")
 
     @tasks.loop(minutes=1)
     async def update_status_message(self):
         logger.debug("Updating status message...")
+        try:
+            self.client.storage["status_message_channel"]
+        except IndexError:
+            return
         status = await self.server_status()
         embed = discord.Embed(title="Server Status", description="Status of all servers", color=0x00ff00)
         for s in status:
-            embed.add_field(name=s["name"], value=f"**Track:** {s['track']}\n**Session:** {s['session']}\n**Time left:** {s['timeleft']}\n**Cars:** {s['clients']}/{s['maxclients']}", inline=False, url=f" https://acstuff.ru/s/q:race/online/join?ip={s['ip']}&httpPort={s['cport']}")
+            join_url = f"https://acstuff.ru/s/q:race/online/join?ip={s['ip']}&httpPort={s['cport']}"
+            embed.add_field(name=s["name"], value=f"**Track:** {s['track']}\n**Session:** {s['session']}\n**Time left:** {s['timeleft']}\n**Cars:** {s['clients']}/{s['maxclients']}\n[Join Server]({join_url})", inline=False)
         message = await self.client.get_channel(self.client.storage["status_message_channel"]).fetch_message(self.client.storage["status_message"])
         await message.edit(embed=embed)
         logger.debug("Status message updated!")
+
+serverstatus = None
 
 async def setup(bot):
     global serverstatus
     serverstatus = ServerStatus(bot)
     await bot.add_cog(serverstatus)
     serverstatus.update_status_message.start()
+

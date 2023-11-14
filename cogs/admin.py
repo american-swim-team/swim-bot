@@ -16,14 +16,24 @@ class Admin(commands.Cog):
 
     @c.command()
     @c.checks.has_permissions(administrator=True)
+    async def sync_commands(self, interaction: discord.Interaction):
+        try:
+            await self.client.sync_commands()
+            await interaction.response.send_message("Synced commands.", ephemeral=True)
+        except Exception as e:
+            logger.error(f"Exception occured: {e}")
+            await interaction.response.send_message(f"Exception occured: \n{e}", ephemeral=True)
+
+    @c.command()
+    @c.checks.has_permissions(administrator=True)
     async def load_cog(self, interaction: discord.Interaction, cog: str):
         logger.debug(f"Loading cog {cog}...")
         try:
             await self.client.load_extension(f"cogs.{cog}")
-            await self.client.sync_commands()
         except Exception as e:
             logger.error(f"Exception occured: {e}")
             await interaction.response.send_message(f"Exception occured: \n{e}", ephemeral=True)
+            return
         await interaction.response.send_message(f"Loaded {cog}.", ephemeral=True)
 
     @c.command()
@@ -35,10 +45,10 @@ class Admin(commands.Cog):
                 await interaction.response.send_message("You can't unload the admin cog.", ephemeral=True)
                 return
             await self.client.unload_extension(f"cogs.{cog}")
-            await self.client.sync_commands()
         except Exception as e:
             logger.error(f"Exception occured: {e}")
             await interaction.response.send_message(f"Exception occured: \n{e}", ephemeral=True)
+            return
         await interaction.response.send_message(f"Unloaded {cog}.", ephemeral=True)
 
     @c.command()
@@ -47,10 +57,10 @@ class Admin(commands.Cog):
         logger.debug(f"Reloading cog {cog}...")
         try:
             await self.client.reload_extension(f"cogs.{cog}")
-            await self.client.sync_commands()
         except Exception as e:
             logger.error(f"Exception occured: {e}")
             await interaction.response.send_message(f"Exception occured: \n{e}", ephemeral=True)
+            return
         await interaction.response.send_message(f"Reloaded {cog}.", ephemeral=True)
 
     @c.command()
