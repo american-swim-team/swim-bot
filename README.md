@@ -1,4 +1,6 @@
- # Swim Bot
+# DEPRECATED: THIS BOT IS NO LONGER IN USE! ARCHIVED AND MADE PUBLIC
+
+# Swim Bot
  
  Swim Bot is a Discord bot developed to enhance the functionality of a specific guild. It provides various features and commands to manage and interact with the guild. The bot is built using Python and utilizes the Discord.py library.
  
